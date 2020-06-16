@@ -3,8 +3,10 @@ import torch.nn as nn
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 
-from ..model import BERTLM, BERT
 from .optim_schedule import ScheduledOptim
+import sys, os
+sys.path.insert(0, os.path.abspath('..'))
+from model import BERTLM, BERT
 
 import tqdm
 
@@ -92,6 +94,7 @@ class BERTTrainer:
 
         avg_loss = 0.0
         total_correct = 0
+        total_close = 0
         total_element = 0
 
         for i, data in data_iter:
@@ -102,13 +105,16 @@ class BERTTrainer:
             next_sent_output, mask_lm_output = self.model.forward(data["bert_input"], data["segment_label"])
 
             # 2-1. NLL(negative log likelihood) loss of is_next classification result
-            next_loss = self.criterion(next_sent_output, data["is_next"])
+            # next_loss = self.criterion(next_sent_output, data["is_next"])
 
             # 2-2. NLLLoss of predicting masked token word
             mask_loss = self.criterion(mask_lm_output.transpose(1, 2), data["bert_label"])
 
             # 2-3. Adding next_loss and mask_loss : 3.4 Pre-training Procedure
-            loss = next_loss + mask_loss
+            loss = mask_loss
+
+            # print(data)
+            # input()
 
             # 3. backward and optimization only in train
             if train:
@@ -117,16 +123,22 @@ class BERTTrainer:
                 self.optim_schedule.step_and_update_lr()
 
             # next sentence prediction accuracy
-            correct = next_sent_output.argmax(dim=-1).eq(data["is_next"]).sum().item()
+            label_mask = torch.where(data["bert_label"] > 0, torch.ones(*data["bert_label"].shape).to(self.device), torch.zeros(*data["bert_label"].shape).to(self.device))
+            correct = torch.mul(mask_lm_output.argmax(dim=2).eq(data["t1_raw"]), label_mask).sum().item()
+            close = torch.mul(torch.mul(mask_lm_output.argmax(dim=2).ge(data["t1_raw"]-10), mask_lm_output.argmax(dim=2).le(data["t1_raw"]+10)), label_mask).sum().item()
             avg_loss += loss.item()
             total_correct += correct
-            total_element += data["is_next"].nelement()
+            total_close += close
+            total_element += label_mask.sum().item()
+            # print(data['bert_label'], mask_lm_output.argmax(dim=2), correct)
+            # input()
 
             post_fix = {
                 "epoch": epoch,
                 "iter": i,
                 "avg_loss": avg_loss / (i + 1),
-                "avg_acc": total_correct / total_element * 100,
+                "avg_acc": total_correct / total_element,
+                "avg_clo": total_close / total_element,
                 "loss": loss.item()
             }
 
@@ -134,7 +146,7 @@ class BERTTrainer:
                 data_iter.write(str(post_fix))
 
         print("EP%d_%s, avg_loss=" % (epoch, str_code), avg_loss / len(data_iter), "total_acc=",
-              total_correct * 100.0 / total_element)
+              total_correct * 100.0 / total_element, "total_clo=", total_close * 100.0 / total_element)
 
     def save(self, epoch, file_path="output/bert_trained.model"):
         """

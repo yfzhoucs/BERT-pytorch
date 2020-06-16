@@ -2,9 +2,9 @@ import argparse
 
 from torch.utils.data import DataLoader
 
-from .model import BERT
-from .trainer import BERTTrainer
-from .dataset import BERTDataset, WordVocab
+from model import BERT
+from trainer import BERTTrainer
+from dataset import BERTDataset, WordVocab
 
 
 def train():
@@ -34,6 +34,9 @@ def train():
     parser.add_argument("--adam_weight_decay", type=float, default=0.01, help="weight_decay of adam")
     parser.add_argument("--adam_beta1", type=float, default=0.9, help="adam first beta value")
     parser.add_argument("--adam_beta2", type=float, default=0.999, help="adam first beta value")
+    parser.add_argument("--multi_segment", type=bool, default=False, help="whether use multiple segment_labels for entity types")  
+    parser.add_argument("--sep_label", type=bool, default=False, help="whether to insert <sep>")  
+
 
     args = parser.parse_args()
 
@@ -43,10 +46,13 @@ def train():
 
     print("Loading Train Dataset", args.train_dataset)
     train_dataset = BERTDataset(args.train_dataset, vocab, seq_len=args.seq_len,
-                                corpus_lines=args.corpus_lines, on_memory=args.on_memory)
+                                corpus_lines=args.corpus_lines, on_memory=args.on_memory, 
+                                multi_segment=args.multi_segment, sep=args.sep_label)
 
     print("Loading Test Dataset", args.test_dataset)
-    test_dataset = BERTDataset(args.test_dataset, vocab, seq_len=args.seq_len, on_memory=args.on_memory) \
+    test_dataset = BERTDataset(args.test_dataset, vocab, seq_len=args.seq_len, 
+                               on_memory=args.on_memory, multi_segment=args.multi_segment,
+                               sep=args.sep_label) \
         if args.test_dataset is not None else None
 
     print("Creating Dataloader")
@@ -69,3 +75,7 @@ def train():
 
         if test_data_loader is not None:
             trainer.test(epoch)
+
+
+if __name__ == '__main__':
+	train()
